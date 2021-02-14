@@ -3,3 +3,5 @@
 .RData
 .Ruserdata
 **arch/
+tempgam.txt
+tempgampred.txt

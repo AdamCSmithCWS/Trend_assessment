@@ -182,7 +182,7 @@ for(ss in sp_all[1:length(sp_all)]){
                        year = yrs)
   
   
-  
+  nyears_recent <- min(floor(nyears*0.75),nyears_recent)
 
     
     gamprep = jagam(formula = form,
@@ -239,6 +239,7 @@ for(ss in sp_all[1:length(sp_all)]){
     mgosum$parameter <- row.names(mgosum)
     
     mgosum$species = ss
+    mgosum$nyears_recent <- nyears_recent
     
     if(jj == 1){
       out = mgosum
