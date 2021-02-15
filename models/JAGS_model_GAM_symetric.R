@@ -1,4 +1,4 @@
-## model used to smooth series of annual indices, that have an estimated precision
+## model used to smooth series of annual indices
 
 model {
   
@@ -39,12 +39,12 @@ model {
   C1 <- ind.pred[Yb]/ind.pred[Ysb] #proportional change from Ysb to Yb - early short-term
   C2 <- ind.pred[Ye]/ind.pred[Yb] #proportional change from Yb to Ye - recent short-term
   C3 <- ind.pred[Ye]/ind.pred[Ys] #proportional change from Ys to Ye - Long-term change
-  T1 <- ((C1)^(1/(Ye-Yb))-1)*100 ##average annual percent change from Ysb to Yb
-  T2 <- ((C2)^(1/(Ye-Yb))-1)*100 ##average annual percent change from Yb to Ye
+  T1 <- ((C1)^(1/(Yb-Ysb))-1)*100 ##average annual percent change from Ysb to Yb -early short term
+  T2 <- ((C2)^(1/(Ye-Yb))-1)*100 ##average annual percent change from Yb to Ye - late short term
   T3 <- ((C3)^(1/(Ye-Ys))-1)*100 ##average annual percent change from Ys to Ye - long term change
   
-  Tdif <- T2-T1
-  Tdif_neg = step(-1*Tdif)
+  Tdif <- T2-T1 #change between early and late short-term 
+  Tdif_neg = step(-1*Tdif) #probability that change is negative
   
   
   
