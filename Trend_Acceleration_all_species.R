@@ -376,7 +376,7 @@ sp_annot <- sp_annot %>% select(species,
                                 index4,
                                 index5) %>% 
   left_join(.,bdif,by = "species") %>% 
-  mutate(lab1 = paste0(early_trend,"% ",max(c(firstyear,start_recent_trend-(Three_gen_time_used))),"-",start_recent_trend),
+  mutate(lab1 = paste0(early_trend,"% ",year1,"-",start_recent_trend),
          lab2 = paste0(late_trend,"% ",start_recent_trend,"-",lastyear),
          lab4 = paste0("p_down = ",round(mean_p,2)),
          lab3 = paste0(long_term_trend,"%",firstyear,"-",lastyear))
@@ -428,9 +428,11 @@ names(cls) <- levels
 # #bdiflab$lab = paste(bdiflab$Difference_late_minus_early_trend,":",bdiflab$LCI_90_Difference_late_minus_early_trend,"-",bdiflab$UCI_90_Difference_late_minus_early_trend,"p =",bdiflab$prob_decreasing_trend)
 # bdiflab$lab = paste0(bdiflab$long_term_trend,"%","pAccelDecl = ",bdiflab$prob_decreasing_trend," dif=",bdiflab$Difference_late_minus_early_trend)
 # bdiflab$index.raw <- bdiflab$index.raw*1.1
-txt_s <- 4#font size in plot below
+txt_s <- 3#font size in plot below
 npag <- ceiling(nrow(bdif)/9)
 clm = scales::viridis_pal(alpha = 1,direction = 1,end = 0.8,begin = 0.2)(2)
+clfil <- rgb(255, 255, 255, max = 255, alpha = floor(255*0.35)) #mostly transparent white
+
 pdf("output/changepoint_graphs_gam_all_species.pdf",
     height = 8.5,width = 11)
 for(ij in 1:npag){
@@ -449,7 +451,8 @@ for(ij in 1:npag){
     geom_label_repel(data = labs_rep,inherit.aes = FALSE,
                      aes(x = year, y = index, colour = group,label = lab),
                      min.segment.length = 0.1, #vjust = 1,
-                     size = txt_s)+
+                     size = txt_s,fill = clfil,
+                     )+
     scale_colour_manual(values = cls)+
     scale_y_continuous(trans = "log",labels = scales::comma)+
     theme_classic()+
