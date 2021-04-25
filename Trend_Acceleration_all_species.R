@@ -54,7 +54,7 @@ spslist[which(spslist$species == "Woodhouse's Scrub-Jay"),"GenLength"] <- gens[w
 
 spslist[which(is.na(spslist$GenLength)),"species"]
 
-
+write.csv(spslist[,c("species","sci_name","GenLength")],"Generation_lengths_Rosenberg_merge_Birdetal.csv",row.names = FALSE)
 
 spsBBS = spslist[grepl(pattern = "BBS",spslist$Tr_source),"species"]
 
@@ -65,20 +65,20 @@ yr_span <- unique(indicesRosen[,c("species","firstyear","lastyear")])
 # ## read in the full suite of annual indices from the GAMYE model - CWS 2019 BBS estimates
 # ## select continental long-term indices and export to smaller csv file to include in Git repo
 # ## does not need to be run because full csv file ~ 1GB in size
-indicesgamye = read.csv("data/arch/2019All BBS indices continent and national.csv",
-                      stringsAsFactors = F)
-indicesgamye[which(indicesgamye$species == "Dark-eyed Junco (all forms)"),"species"] <- "Dark-eyed Junco"
-indicesgamye[which(indicesgamye$species == "Northern Flicker (all forms)"),"species"] <- "Northern Flicker"
-indicesgamye[which(indicesgamye$species == "Red-tailed Hawk (all forms)"),"species"] <- "Red-tailed Hawk"
-indicesgamye[which(indicesgamye$species == "Yellow-rumped Warbler (all forms)"),"species"] <- "Yellow-rumped Warbler"
-## select the continental estimates for the BBS species
-indicesraw <- indicesgamye %>%
-  filter(Region == "Continental",
-         Trend_Time == "Long-term",
-         species %in% spsBBS)
-
-write.csv(indicesraw,"data/2019_BBS_continental_indices_gamye.csv",row.names = FALSE)
-rm(list = "indicesgamye")
+# indicesgamye = read.csv("data/arch/2019All BBS indices continent and national.csv",
+#                       stringsAsFactors = F)
+# indicesgamye[which(indicesgamye$species == "Dark-eyed Junco (all forms)"),"species"] <- "Dark-eyed Junco"
+# indicesgamye[which(indicesgamye$species == "Northern Flicker (all forms)"),"species"] <- "Northern Flicker"
+# indicesgamye[which(indicesgamye$species == "Red-tailed Hawk (all forms)"),"species"] <- "Red-tailed Hawk"
+# indicesgamye[which(indicesgamye$species == "Yellow-rumped Warbler (all forms)"),"species"] <- "Yellow-rumped Warbler"
+# ## select the continental estimates for the BBS species
+# indicesraw <- indicesgamye %>%
+#   filter(Region == "Continental",
+#          Trend_Time == "Long-term",
+#          species %in% spsBBS)
+# 
+# write.csv(indicesraw,"data/2019_BBS_continental_indices_gamye.csv",row.names = FALSE)
+# rm(list = "indicesgamye")
 
 
 indicesraw <- read.csv("data/2019_BBS_continental_indices_gamye.csv")
@@ -93,7 +93,7 @@ sp_missing_new_bbs
 
 indicesraw <- indicesraw %>% 
   group_by(species) %>% 
-  filter(Year >= firstyear & Year <= lastyear)
+  filter(Year >= firstyear)
 
 indicesraw$lci.raw <- indicesraw$Index_q_0.025
 indicesraw$uci.raw <- indicesraw$Index_q_0.975
@@ -140,8 +140,8 @@ for(ss in sp_all[1:length(sp_all)]){
   wss = which(indicesAll$species == ss)
   tmp = indicesAll[wss,]
   
-  fyr = unique(tmp$firstyear)
-  lyr = unique(tmp$lastyear)
+  fyr = max(c(unique(tmp$firstyear),min(tmp$Year)))
+  lyr = max(c(unique(tmp$lastyear),max(tmp$Year)))
   
   torep = which(indicesAll$species == ss & (indicesAll$year >= fyr & indicesAll$year <= lyr))
   
@@ -218,7 +218,7 @@ for(ss in sp_all[1:length(sp_all)]){
     
     
     mgo = jagsUI(data = dat,
-                 model.file = paste0("models/JAGS_model_GAM_symetric.R"),
+                 model.file = paste0("models/JAGS_model_GAM_Asymetric.R"),
                  n.chains = 3,
                 parameters.to.save = c("ind.pred",
                          "C1",
@@ -246,6 +246,10 @@ for(ss in sp_all[1:length(sp_all)]){
     
     mgosum$species = ss
     mgosum$nyears_recent <- nyears_recent
+    mgosum$firstyear <- yminy
+    mgosum$lastyear <- ymaxy
+    mgosum$Three_gen_time_used <- nyears_recent
+    mgosum$start_recent_trend <- ymaxy-nyears_recent
     
     if(jj == 1){
       out = mgosum
@@ -271,21 +275,23 @@ names(out)[which(grepl(names(out),pattern = ".",fixed = T))] <- paste0(gsub(name
 mu_ <- filter(out,parameter %in% c(paste0("ind.pred[",1:53,"]")))
 mu_ <- mutate(mu_,yr = jags_dim(dat = mu_, cl = "parameter",var = "ind.pred"),
               est = "mu")
-fyr_sp <- unique(indicesAll[,c("species","firstyear")])
-for(i in 1:nrow(fyr_sp)){
-  sp = as.character(fyr_sp[i,"species"])
-  fy = (fyr_sp[i,"firstyear"])
-  Tfy = min(indicesAll[which(indicesAll$species == sp & !is.na(indicesAll$index.raw)),"year"])
-  if(Tfy != fy){
-    fyr_sp[i,"firstyear"] <- Tfy
-  }
-  chp <- unique(mu_[which(mu_$species == sp),"nyears_recent"])
-  fyr_sp[i,"Three_gen_time_used"] <- chp
-  fyr_sp[i,"lastyear"] <- max(indicesAll[which(indicesAll$species == sp & !is.na(indicesAll$index.raw)),"year"])
-  fyr_sp[i,"start_recent_trend"] <- fyr_sp[i,"lastyear"]-chp
-    
-}
-mu_ <- left_join(mu_,fyr_sp,by = "species")
+# fyr_sp <- unique(indicesAll[,c("species","firstyear")])
+# for(i in 1:nrow(fyr_sp)){
+#   sp = as.character(fyr_sp[i,"species"])
+#   fy = (fyr_sp[i,"firstyear"])
+#   Tfy = min(indicesAll[which(indicesAll$species == sp & !is.na(indicesAll$index.raw)),"year"])
+#   if(Tfy != fy){
+#     fyr_sp[i,"firstyear"] <- Tfy
+#   }
+#   chp <- unique(mu_[which(mu_$species == sp),"nyears_recent"])
+#   fyr_sp[i,"Three_gen_time_used"] <- chp
+#   fyr_sp[i,"lastyear"] <- max(indicesAll[which(indicesAll$species == sp & !is.na(indicesAll$index.raw)),"year"])
+#   fyr_sp[i,"start_recent_trend"] <- fyr_sp[i,"lastyear"]-chp
+#     
+# }
+# mu_ <- left_join(mu_,fyr_sp,by = "species")
+
+fyr_sp <- unique(mu_[,c("species","firstyear","lastyear","start_recent_trend","Three_gen_time_used")])
 mu_$year <- mu_$yr+(mu_$firstyear-1)
 
 
@@ -328,6 +334,8 @@ bdif <- left_join(bdif,T3[,c("species","long_term_trend","LCI_long_term_trend","
 bdif <- left_join(bdif,T1[,c("species","early_trend","LCI_early_trend","UCI_early_trend")])
 bdif <- left_join(bdif,T2[,c("species","late_trend","LCI_late_trend","UCI_late_trend")])
 
+
+
 bdif <- left_join(bdif,fyr_sp)
 
 write.csv(bdif[,c("species","firstyear","Three_gen_time_used","lastyear","start_recent_trend",
@@ -337,9 +345,9 @@ write.csv(bdif[,c("species","firstyear","Three_gen_time_used","lastyear","start_
                   "early_trend","LCI_early_trend","UCI_early_trend",
                   "late_trend","LCI_late_trend","UCI_late_trend")],"output/Differences_in_Trends_GAM_all_species.csv",row.names = F)
 
-sp_annot <- fyr_sp %>% mutate(year1 = max(firstyear,floor(start_recent_trend-(Three_gen_time_used))),
+sp_annot <- fyr_sp %>% mutate(year1 = firstyear,#max(firstyear,floor(start_recent_trend-(Three_gen_time_used))),
                               year2 = lastyear,#floor(start_recent_trend+(Three_gen_time_used)),
-                              year3 = floor(mean(c(firstyear,lastyear))),
+                              year3 = floor(firstyear+((start_recent_trend-firstyear)/2)),
                               year4 = start_recent_trend)
 sp_annot <- as.data.frame(sp_annot)
 for(sp in sp_annot$species){
@@ -386,7 +394,7 @@ plot_ts2 <- NULL
 for(sp in sp_annot$species){
   if(sp == "Brant"){next}
   i = which(sp_annot$species == sp)
-  ys <- c(max(sp_annot[i,"firstyear"],floor(sp_annot[i,"start_recent_trend"]-(sp_annot[i,"Three_gen_time_used"]))),
+  ys <- c((sp_annot[i,"firstyear"]),
           sp_annot[i,"start_recent_trend"])
   tmp <- mu_[which(mu_$species == sp & mu_$year %in% ys),]
   tmp$period = "early"
