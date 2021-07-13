@@ -31,7 +31,6 @@ gens <- gens %>% select(Scientific_name,
 
 spslist <- left_join(spslist,gens,by = c("sci_name" = "Scientific_name"))
 
-
 # reconciling scientific names --------------------------------------------
 sps_nomatch <- spslist[which(is.na(spslist$GenLength)),"species"]
 fullgensnames = read.csv("data/cobi13486-sup-0001-tables1.csv")
@@ -57,6 +56,8 @@ spslist[which(is.na(spslist$GenLength)),"species"]
 write.csv(spslist[,c("species","sci_name","GenLength")],"Generation_lengths_Rosenberg_merge_Birdetal.csv",row.names = FALSE)
 
 spsBBS = spslist[grepl(pattern = "BBS",spslist$Tr_source),"species"]
+spsCBC = spslist[grepl(pattern = "CBC",spslist$Tr_source),"species"]
+spsShorebird = spslist[grepl(pattern = "Mig7416",spslist$Tr_source),"species"]
 
 indicesRosen = read.csv("data/Rosenberg et al annual indices of abundance.csv",
                       stringsAsFactors = F)
@@ -93,7 +94,8 @@ sp_missing_new_bbs
 
 indicesraw <- indicesraw %>% 
   group_by(species) %>% 
-  filter(Year >= firstyear)
+  filter(Year >= firstyear,
+         species %in% spsBBS)
 
 indicesraw$lci.raw <- indicesraw$Index_q_0.025
 indicesraw$uci.raw <- indicesraw$Index_q_0.975
@@ -108,12 +110,113 @@ sp_wnew_bbs <- unique(indicesBBS$species)
 # merge bbs indices with remaining Rosenberg indices ---------------------
 spRosen <- unique(indicesRosen$species)
 spRosen <- spRosen[-which(spRosen %in% sp_wnew_bbs)]
+## drop the species with new BBS from the Rosenberg indices
+indicesRosen <- filter(indicesRosen,
+                       species %in% spRosen)
+
+
+
+# Inserting updated CBC indices -------------------------------------------
+
+
+indicesraw <- read.csv("data/cbc_indices_Continental_1966-2019.csv")
+
+indicesraw[which(grepl(indicesraw$scientific_name_cbc,pattern = "Branta hutchinsii canadensis")),"english_name"] <- "Canada Goose"
+tmp = indicesraw[which(grepl(indicesraw$scientific_name_cbc,pattern = "Aechmophorus")),]
+indicesraw[which(grepl(indicesraw$scientific_name_cbc,pattern = "Aechmophorus")),"english_name"] <- "Clark's Grebe"
+tmp$english_name <- "Western Grebe"
+
+indicesraw <- bind_rows(indicesraw,tmp)
+
+
+indicesraw <- left_join(indicesraw,yr_span,by = c("english_name" = "species"))
+
+sp_wnew_cbc <- unique(indicesraw$english_name)
+sp_missing_new_cbc <- spsCBC[-which(spsCBC %in% sp_wnew_cbc)]
+sp_missing_new_cbc
+
+
+indicesraw <- indicesraw %>% 
+  filter(count_year >= firstyear)
+
+indicesraw$lci.raw <- indicesraw$estimate_lcl 
+indicesraw$uci.raw <- indicesraw$estimate_ucl 
+indicesraw$index.raw <- indicesraw$estimate_median 
+indicesraw$year <- indicesraw$count_year
+indicesraw$species <- indicesraw$english_name
+
+indicesraw = indicesraw[order(indicesraw$species,indicesraw$year),]
+
+indicesCBC <- indicesraw %>% select(species,year,index.raw,lci.raw,uci.raw,firstyear,lastyear) %>% 
+  filter(species %in% spsCBC)
+
+sp_wnew_cbc <- unique(indicesCBC$species)
+
+
+# merge CBC indices with remaining Rosenberg indices ---------------------
+spRosen <- unique(indicesRosen$species)
+spRosen <- spRosen[-which(spRosen %in% spsCBC)]
 
 indicesRosen <- filter(indicesRosen,
                        species %in% spRosen)
 
 
-indicesAll <- bind_rows(indicesBBS,indicesRosen)
+
+
+# Inserting new shorebird migration survey trajectories -------------------
+
+
+indicesraw <- read.csv("data/Shorebird_indices_Continental_gamma_t.csv")
+
+#indicesraw <- read.csv("data/Shorebird_indices_Continental_1980-2019.csv")
+
+yr_span[which(yr_span$species %in% spsShorebird),"firstyear"] <- 1980
+
+indicesraw <- left_join(indicesraw,yr_span,by = c("species" = "species"))
+
+sp_wnew_Shorebird <- unique(indicesraw$species)
+sp_missing_new_Shorebird <- spsShorebird[-which(spsShorebird %in% sp_wnew_Shorebird)]
+sp_missing_new_Shorebird
+
+indicesraw <- indicesraw %>% 
+  filter(year >= firstyear,
+         parm == "N")
+
+indicesraw$lci.raw <- indicesraw$lci 
+indicesraw$uci.raw <- indicesraw$uci 
+indicesraw$index.raw <- indicesraw$median 
+
+indicesraw = indicesraw[order(indicesraw$species,indicesraw$year),]
+
+indicesShorebird <- indicesraw %>% select(species,year,index.raw,lci.raw,uci.raw,firstyear,lastyear) %>% 
+  filter(species %in% spsShorebird)
+
+sp_wnew_Shorebird <- unique(indicesShorebird$species)
+
+
+# merge bbs indices with remaining Rosenberg indices ---------------------
+spRosen <- unique(indicesRosen$species)
+spRosen <- spRosen[-which(spRosen %in% spsShorebird)]
+
+indicesRosen <- filter(indicesRosen,
+                       species %in% spRosen)
+
+
+
+
+
+
+
+
+
+indicesAll <- bind_rows(indicesBBS,indicesCBC,indicesShorebird,indicesRosen)
+
+
+
+
+
+
+
 
 sp_all <- unique(indicesAll$species)
 
@@ -129,6 +232,9 @@ indicesAll <- indicesAll %>%
 
 #nyears_recent = 15
 
+# Species loop ------------------------------------------------------------
+
+
 jj = 0
 for(ss in sp_all[1:length(sp_all)]){
   jj = jj+1
@@ -140,8 +246,8 @@ for(ss in sp_all[1:length(sp_all)]){
   wss = which(indicesAll$species == ss)
   tmp = indicesAll[wss,]
   
-  fyr = max(c(unique(tmp$firstyear),min(tmp$Year)))
-  lyr = max(c(unique(tmp$lastyear),max(tmp$Year)))
+  fyr = max(c(unique(tmp$firstyear),min(tmp$year)))
+  lyr = max(c(unique(tmp$lastyear),max(tmp$year)))
   
   torep = which(indicesAll$species == ss & (indicesAll$year >= fyr & indicesAll$year <= lyr))
   
@@ -239,8 +345,12 @@ for(ss in sp_all[1:length(sp_all)]){
                 parallel = T)
     
     
-    mgosum = data.frame(mgo$summary)
-    
+    #mgosum = data.frame(mgo$summary)
+    mgosum2 = summary(mgo$samples,quantiles = c(0.025,0.05,0.25,0.5,0.75,0.95,0.975))
+    mgosum = as.data.frame(cbind(mgosum2$statistics,mgosum2$quantiles))
+    #names(mgosum) <- gsub(names(mgosum),pattern = "%",replacement = ".",fixed = TRUE)
+    names(mgosum) <- c("mean","sd","NaiveSE","T_S_SE",
+                       "X2_5_","X5_","X25_","X50_","X75_","X95_","X97_5_")
     
     mgosum$parameter <- row.names(mgosum)
     
@@ -265,12 +375,18 @@ save(list = c("out"),file = "output/temp_out_all_species.RData")
 
 
 
+
+
+# END of the species loop -------------------------------------------------
+
+
+
 ### New figures to select declining species, 
 # show trend-windows for the early and late. 
 # Colour the trajectories based on the probability of accelerating decline.
 
 load("output/temp_out_all_species.RData")
-names(out)[which(grepl(names(out),pattern = ".",fixed = T))] <- paste0(gsub(names(out)[which(grepl(names(out),pattern = ".",fixed = T))] ,pattern = ".",replacement = "_", fixed = TRUE))
+#names(out)[which(grepl(names(out),pattern = ".",fixed = T))] <- paste0(gsub(names(out)[which(grepl(names(out),pattern = ".",fixed = T))] ,pattern = ".",replacement = "_", fixed = TRUE))
 
 mu_ <- filter(out,parameter %in% c(paste0("ind.pred[",1:53,"]")))
 mu_ <- mutate(mu_,yr = jags_dim(dat = mu_, cl = "parameter",var = "ind.pred"),
@@ -309,24 +425,28 @@ T3 <- filter(out,parameter %in% c(paste0("T3")))
 
 prob_annot <- select(Tdif_neg,mean,species)
 names(prob_annot)[1] <- "mean_p"
-bdif <- select(Tdif,X2_5_,mean,X97_5_,species)
+
+
+# Using 90% CIs -----------------------------------------------------------
+
+bdif <- select(Tdif,X5_,mean,X95_,species)
 bdif <- left_join(bdif,prob_annot,by = "species")
 bdif$Difference_late_minus_early_trend <- round(bdif$mean,1)
-bdif$UCI_90_Difference_late_minus_early_trend <- round(bdif$X97_5_,1)
-bdif$LCI_90_Difference_late_minus_early_trend <- round(bdif$X2_5_,1)
+bdif$UCI_90_Difference_late_minus_early_trend <- round(bdif$X95_,1)
+bdif$LCI_90_Difference_late_minus_early_trend <- round(bdif$X5_,1)
 bdif$prob_decreasing_trend <- round(bdif$mean_p,2)
 
 T1$early_trend <- round(T1$mean,1)
-T1$LCI_early_trend <- round(T1$X2_5_,1)
-T1$UCI_early_trend <- round(T1$X97_5_,1)
+T1$LCI_early_trend <- round(T1$X5_,1)
+T1$UCI_early_trend <- round(T1$X95_,1)
 
 T2$late_trend <- round(T2$mean,1)
-T2$LCI_late_trend <- round(T2$X2_5_,1)
-T2$UCI_late_trend <- round(T2$X97_5_,1)
+T2$LCI_late_trend <- round(T2$X5_,1)
+T2$UCI_late_trend <- round(T2$X95_,1)
 
 T3$long_term_trend <- round(T3$mean,1)
-T3$LCI_long_term_trend <- round(T3$X2_5_,1)
-T3$UCI_long_term_trend <- round(T3$X97_5_,1)
+T3$LCI_long_term_trend <- round(T3$X5_,1)
+T3$UCI_long_term_trend <- round(T3$X95_,1)
 
 
 
@@ -338,12 +458,42 @@ bdif <- left_join(bdif,T2[,c("species","late_trend","LCI_late_trend","UCI_late_t
 
 bdif <- left_join(bdif,fyr_sp)
 
+sp_by_survey <- unique(spslist[,c("species","Tr_source")])
+
+sp_by_survey[which(sp_by_survey$species %in% sp_wnew_bbs),"Tr_source"] <- "BBS_GAM"
+sp_by_survey[which(sp_by_survey$species %in% sp_wnew_cbc),"Tr_source"] <- "CBC_2019"
+sp_by_survey[which(sp_by_survey$species %in% sp_wnew_Shorebird),"Tr_source"] <- "Shorebird_GAM"
+
+# spsBBS = spslist[grepl(pattern = "BBS",spslist$Tr_source),"species"]
+# spsCBC = spslist[grepl(pattern = "CBC",spslist$Tr_source),"species"]
+# spsShorebird = spslist[grepl(pattern = "Mig7416",spslist$Tr_source),"species"]
+
+bdif <- left_join(bdif,sp_by_survey,by = "species")
+
 write.csv(bdif[,c("species","firstyear","Three_gen_time_used","lastyear","start_recent_trend",
                   "Difference_late_minus_early_trend","LCI_90_Difference_late_minus_early_trend","UCI_90_Difference_late_minus_early_trend",
                   "prob_decreasing_trend",
                   "long_term_trend","LCI_long_term_trend","UCI_long_term_trend",
                   "early_trend","LCI_early_trend","UCI_early_trend",
-                  "late_trend","LCI_late_trend","UCI_late_trend")],"output/Differences_in_Trends_GAM_all_species.csv",row.names = F)
+                  "late_trend","LCI_late_trend","UCI_late_trend",
+                  "Tr_source")],"output/Differences_in_Trends_GAM_all_species.csv",row.names = F)
+
+
+bdif_plot <- bdif %>% filter(Tr_source %in% c("BBS_GAM","CBC_2019","Shorebird_GAM"))
+distr_change <- ggplot(data = bdif_plot,aes(x = prob_decreasing_trend))+
+  geom_histogram(bins = 10)+
+  facet_wrap(~Tr_source,scales = "free_y")
+
+png_mag = 5
+
+png(paste0("output/images/probability_change_among_surveys_demo.png"),
+    res = 100*png_mag,
+    width = 480*png_mag,
+    height = 480*png_mag)
+print(distr_change)
+dev.off()
+
+
 
 sp_annot <- fyr_sp %>% mutate(year1 = firstyear,#max(firstyear,floor(start_recent_trend-(Three_gen_time_used))),
                               year2 = lastyear,#floor(start_recent_trend+(Three_gen_time_used)),
@@ -359,12 +509,13 @@ for(sp in sp_annot$species){
   y3 = sp_annot[i,"year3"]
   y4 = sp_annot[i,"year4"]
   
-  yup = max(c(quantile(tmp$uci.raw,0.95,na.rm = T),max(tmp$index.raw,na.rm = T)*2),na.rm = T)
-  yr = (yup-min(c(tmp$lci.raw,tmp$index.raw),na.rm = T))*0.1
+  yup = max(c(quantile(tmp$uci.raw,0.95,na.rm = T),max(tmp$index.raw,na.rm = T)*1.1),na.rm = T)
+  yr = min(c(tmp$lci.raw,tmp$index.raw,yup*0.1),na.rm = T)
+  
   sp_annot[i,"index1"] <- tmpmu[which(tmpmu$year == y1),"mean"]
   sp_annot[i,"index2"] <- tmpmu[which(tmpmu$year == y2),"mean"]
   sp_annot[i,"index4"] <- tmpmu[which(tmpmu$year == y4),"mean"]
-  sp_annot[i,"index3"] <- yup*0.75
+  sp_annot[i,"index3"] <- yr
   try(sp_annot[i,"index5"] <- tmpmu[which(tmpmu$year == y4),"mean"])
   
   if(is.na(sp_annot[i,"index1"])){sp_annot[i,"index1"]<- yup*0.7} 
@@ -448,7 +599,7 @@ for(ij in 1:npag){
     geom_pointrange(data = indicesAll,inherit.aes = FALSE,
                     aes(x = year,y = index.raw,ymax = uci.raw,ymin = lci.raw),
                     alpha = 0.1, size = 0.3)+
-    geom_ribbon(aes(ymin = X2_5_,ymax = X97_5_),alpha = 0.2,fill = clm[2])+
+    geom_ribbon(aes(ymin = X5_,ymax = X95_),alpha = 0.2,fill = clm[2])+
     geom_line(colour = clm[2])+
     geom_point(data = sp_annot,inherit.aes = FALSE,
                aes(x = year4,y = index5),colour = "red")+
@@ -470,3 +621,173 @@ for(ij in 1:npag){
 }
 dev.off()
 
+
+
+# plotting graphs for selected species ------------------------------------
+
+sp_sel <- c("Barn Swallow",
+            "Bank Swallow",
+            "Chimney Swift",
+            "Common Grackle",
+            "Greater Yellowlegs",
+            "Lesser Yellowlegs",
+            "Red Knot",
+            "Sanderling",
+            "Canada Warbler",
+            "Loggerhead Shrike",
+            "Clark's Grebe",
+            "Snowy Owl")
+mu_sel <- mu_ %>% filter(species %in% sp_sel)
+indicesAll_sel <- indicesAll %>% filter(species %in% sp_sel)
+sp_annot_sel <- sp_annot %>% filter(species %in% sp_sel)
+labs_rep_sel <- labs_rep %>% filter(species %in% sp_sel)
+plot_ts1_sel <- plot_ts1 %>% filter(species %in% sp_sel)
+plot_ts2_sel <- plot_ts2 %>% filter(species %in% sp_sel)
+
+
+pdf("output/changepoint_graphs_gam_selected_species.pdf",
+    height = 8.5,width = 11)
+for(ij in 1:3){
+  trajs <- ggplot(data = mu_sel,aes(x = year,y = mean))+
+    geom_pointrange(data = indicesAll_sel,inherit.aes = FALSE,
+                    aes(x = year,y = index.raw,ymax = uci.raw,ymin = lci.raw),
+                    alpha = 0.1, size = 0.3)+
+    geom_ribbon(aes(ymin = X5_,ymax = X95_),alpha = 0.2,fill = clm[2])+
+    geom_line(colour = clm[2])+
+    geom_point(data = sp_annot_sel,inherit.aes = FALSE,
+               aes(x = year4,y = index5),colour = "red")+
+    geom_line(data = plot_ts1_sel,inherit.aes = FALSE,
+              aes(x = year,y = mean),colour = cls[1])+
+    geom_line(data = plot_ts2_sel,inherit.aes = FALSE,
+              aes(x = year,y = mean),colour = cls[2])+
+    geom_label_repel(data = labs_rep_sel,inherit.aes = FALSE,
+                     aes(x = year, y = index, colour = group,label = lab),
+                     min.segment.length = 0.1, #vjust = 1,
+                     size = txt_s,fill = clfil,
+    )+
+    scale_colour_manual(values = cls)+
+    scale_y_continuous(trans = "log",labels = scales::comma)+
+    #scale_y_continuous(labels = scales::comma)+
+    theme_classic()+
+    theme(legend.position = "none")+
+    facet_wrap_paginate(facets = ~species,scales = "free_y",nrow = 2,ncol = 2,page = ij)
+  print(trajs)
+}
+dev.off()
+
+
+
+# single species graphs ---------------------------------------------------
+sp_sel1 <- "Barn Swallow"
+
+for(sp_sel1 in sp_sel){
+
+mu_sel <- mu_ %>% filter(species %in% sp_sel1)
+indicesAll_sel <- indicesAll %>% filter(species %in% sp_sel1)
+sp_annot_sel <- sp_annot %>% filter(species %in% sp_sel1)
+labs_rep_sel <- labs_rep %>% filter(species %in% sp_sel1)
+plot_ts1_sel <- plot_ts1 %>% filter(species %in% sp_sel1)
+plot_ts2_sel <- plot_ts2 %>% filter(species %in% sp_sel1)
+
+yup = max(c(max(indicesAll_sel$index.raw,na.rm = TRUE)*1.1,max(indicesAll_sel$uci.raw,na.rm = TRUE)))
+ydn = min(c(indicesAll_sel$lci.raw,yup*0.1),na.rm = T)
+
+
+png_mag = 5
+
+  trajs <- ggplot(data = mu_sel,aes(x = year,y = mean))+
+    geom_pointrange(data = indicesAll_sel,inherit.aes = FALSE,
+                    aes(x = year,y = index.raw,ymax = uci.raw,ymin = lci.raw),
+                    alpha = 0.4, size = 0.3)+
+    ylab("Estimated population trajectory")+
+    xlab("")+
+    labs(title = sp_sel1)+
+    scale_y_continuous(trans = "log",labels = scales::comma)+
+    scale_x_continuous(limits = c(1970,2020),breaks = seq(1970,2020,by = 10))+
+    #scale_y_continuous(labels = scales::comma)+
+    theme_classic()+
+    coord_cartesian(ylim = c(ydn,yup))+
+    theme(legend.position = "none")
+
+  stp = 1
+  png(paste0("output/images/",sp_sel1,"_",stp,"_example.png"),
+      res = 100*png_mag,
+      width = 480*png_mag,
+      height = 480*png_mag)
+  print(trajs)
+  dev.off()
+  
+  trajs <- ggplot(data = mu_sel,aes(x = year,y = mean))+
+    geom_pointrange(data = indicesAll_sel,inherit.aes = FALSE,
+                    aes(x = year,y = index.raw,ymax = uci.raw,ymin = lci.raw),
+                    alpha = 0.2, size = 0.3)+
+    ylab("Estimated population trajectory")+
+    xlab("")+
+    labs(title = sp_sel1)+
+    scale_y_continuous(trans = "log",labels = scales::comma)+
+    scale_x_continuous(limits = c(1970,2020),breaks = seq(1970,2020,by = 10))+
+    #scale_y_continuous(labels = scales::comma)+
+    theme_classic()+
+    coord_cartesian(ylim = c(ydn,yup))+
+    theme(legend.position = "none")
+  
+  
+  trajs <- trajs +
+    geom_ribbon(aes(ymin = X5_,ymax = X95_),alpha = 0.2,fill = clm[2])+
+    geom_line(colour = clm[2])
+  
+  stp = stp+1
+  png(paste0("output/images/",sp_sel1,"_",stp,"_example.png"),
+      res = 100*png_mag,
+      width = 480*png_mag,
+      height = 480*png_mag)
+  print(trajs)
+  dev.off()
+  
+  trajs <- trajs+
+    geom_point(data = sp_annot_sel,inherit.aes = FALSE,
+               aes(x = year4,y = index5),colour = "red") +
+    geom_line(data = plot_ts2_sel,inherit.aes = FALSE,
+              aes(x = year,y = mean),colour = cls[2])
+  
+  stp = stp+1
+  png(paste0("output/images/",sp_sel1,"_",stp,"_example.png"),
+      res = 100*png_mag,
+      width = 480*png_mag,
+      height = 480*png_mag)
+  print(trajs)
+  dev.off()
+  
+  
+  trajs <- trajs +
+  geom_line(data = plot_ts1_sel,inherit.aes = FALSE,
+            aes(x = year,y = mean),colour = cls[1])
+  
+  stp = stp+1
+  png(paste0("output/images/",sp_sel1,"_",stp,"_example.png"),
+      res = 100*png_mag,
+      width = 480*png_mag,
+      height = 480*png_mag)
+  print(trajs)
+  dev.off()
+  
+
+  trajs <- trajs +
+    geom_label_repel(data = labs_rep_sel,inherit.aes = FALSE,
+                     aes(x = year, y = index, colour = group,label = lab),
+                     min.segment.length = 0.1, #vjust = 1,
+                     size = txt_s,fill = clfil)+
+    scale_colour_manual(values = cls)
+  
+  
+  stp = stp+1
+  png(paste0("output/images/",sp_sel1,"_",stp,"_example.png"),
+      res = 100*png_mag,
+      width = 480*png_mag,
+      height = 480*png_mag)
+  print(trajs)
+  dev.off()
+  
+  
+
+}
